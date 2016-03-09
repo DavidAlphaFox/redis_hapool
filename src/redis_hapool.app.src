@@ -1,0 +1,18 @@
+{application, redis_hapool,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { redis_hapool_app, []}},
+  {env, [
+      {redis_pool,[
+          {pool1, 30, 20, "127.0.0.1", 19000},
+          {pool2, 30, 20, "127.0.0.1", 19001},
+          {pool3, 30, 20, "127.0.0.1", 19002}
+      ]}
+  ]}
+ ]}.
