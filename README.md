@@ -1,6 +1,15 @@
 # redis_hapool
 Redis Cline HA Pool in Erlang
 
+# Configration
+```Erlang
+      {redis_pool,[
+          {pool1, 30, 20, "127.0.0.1", 19000},
+          {pool2, 30, 20, "127.0.0.1", 19001},
+          {pool3, 30, 20, "127.0.0.1", 19002}
+      ]}
+```
+
 # Compile
 rebar get-deps compile
 
