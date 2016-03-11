@@ -267,7 +267,13 @@ code_change(_OldVsn, State, _Extra) ->
 -spec q(Command::iolist()) ->
     {ok, binary() | [binary()]} | {error, Reason::binary()}.
 q(Command) ->
-    gen_server:call(?MODULE, {q, Command}).
+    RedisConnections = get_ets_redis_connections(),
+    case try_to_exec_command(RedisConnections, [], Command, 2) of
+        {error, Error, _RedisConnections2, _InvalidConnections2} ->
+            {error, Error};
+        {ok, Value} ->
+            {ok, Value}
+    end.
 
 %%%===================================================================
 %%% Internal functions
@@ -354,6 +360,10 @@ update_ets_redis_connections(OkConnections) ->
     catch E:T ->
         lager:log(error, self(), "update ets redis connection failed[~p:~p]", [E, T])
     end.
+
+get_ets_redis_connections() ->
+    [{?REDISES_CONNECTION_LIST, OkConnections}] = ets:lookup(?REDISES_CONNECTION_TABLE, ?REDISES_CONNECTION_LIST),
+    OkConnections.
 
 -spec (schedule_redis_recovery() -> ok).
 schedule_redis_recovery() ->
