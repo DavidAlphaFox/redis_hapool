@@ -1,5 +1,5 @@
 # redis_hapool
-Redis Cline HA Pool in Erlang
+Redis Client HA Pool in Erlang
 
 # Configration
 ```Erlang
@@ -17,7 +17,7 @@ rebar get-deps compile
 rebar eunit skip_deps=true
 
 # Run
-erl -pa ebin -pa deps/*/ebin -sname ha -setcookie abc -mnesia dir '"/tmp/mdb"' -s eredis_pool -s redis_hapool
+erl -pa ebin -pa deps/*/ebin -s eredis_pool -s redis_hapool
 
 # APIs
 
