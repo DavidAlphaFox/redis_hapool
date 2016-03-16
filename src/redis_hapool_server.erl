@@ -18,7 +18,7 @@
 %% API
 -export([start_link/1
     , poolname/1
-    , redis_connection_changed/4, q/1]).
+    , redis_connection_changed/4, q/1, q/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -32,6 +32,7 @@
 
 -define(REDIS_RECOVERY_TIME_INTERVAL, 2000).
 -define(REDIS_RECOVERY_TIMER, redis_recovery_timer).
+-define(REDIS_QUERY_TIMEOUT, 5000).
 
 -record(state, {
     redis_infos         ::redis_info_list(),
@@ -100,28 +101,16 @@ init([RedisInfos]) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_call({q, Command}, _From, State = #state{
-    redis_connections = RedisConnections,
-    invalid_connections = InvalidConnections}) ->
-    %% select a connection from redis_connections
-    %% if there is no connection available, return error
-    case try_to_exec_command(RedisConnections, InvalidConnections, Command, 2) of
-        {error, Error, RedisConnections2, InvalidConnections2} ->
-            {reply, {error, Error}, State#state{redis_connections = RedisConnections2,
-                invalid_connections = InvalidConnections2}};
-        {ok, Value} ->
-            {reply, {ok, Value}, State}
-    end;
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
-try_to_exec_command(RedisConnections, InvalidConnections, Command, TryCount) ->
+try_to_exec_command(RedisConnections, InvalidConnections, Command, TryCount, Timeout) ->
     case RedisConnections of
         [Connection | RestConnection] ->
             [Connection | RestConnection] = RedisConnections,
             Pool = poolname(Connection),
             %% try to exec the command
-            Ret = eredis_pool:q(Pool, Command),
+            Ret = eredis_pool:q(Pool, Command, Timeout),
             case Ret of
                 {error, Error}  ->
                     InvalidConnections2 = lists:append(InvalidConnections, [Connection]),
@@ -130,7 +119,7 @@ try_to_exec_command(RedisConnections, InvalidConnections, Command, TryCount) ->
                         TryCount == 0 ->
                             {error, Error, RestConnection, InvalidConnections2};
                         true ->
-                            try_to_exec_command(RestConnection, InvalidConnections2, Command, TryCount - 1)
+                            try_to_exec_command(RestConnection, InvalidConnections2, Command, TryCount - 1, Timeout)
                     end;
                 {ok, Value} ->
                     {ok, Value}
@@ -219,9 +208,9 @@ handle_info(?REDIS_RECOVERY_TIMER, State = #state{redis_connections = OldRedisCo
     case erlang:length(RecoveredRedisConnections) of
         0 ->
             % no redis connection recovered
-            ?INFO("tried to recover redis connections [~p], and none recovery", [OldInvalidConnections]);
+            ?DEBUG("tried to recover redis connections [~p], and none recovery", [OldInvalidConnections]);
         _ ->
-            ?INFO("recovered redis connections [~p] from [~p]", [RecoveredRedisConnections, OldInvalidConnections]),
+            ?DEBUG("recovered redis connections [~p] from [~p]", [RecoveredRedisConnections, OldInvalidConnections]),
             redis_connection_changed(?MODULE, OldRedisConnections, ToRedisConnections, {replace, NewInvalidConnections})
     end,
     {noreply, State};
@@ -267,8 +256,11 @@ code_change(_OldVsn, State, _Extra) ->
 -spec q(Command::iolist()) ->
     {ok, binary() | [binary()]} | {error, Reason::binary()}.
 q(Command) ->
+    q(Command, ?REDIS_QUERY_TIMEOUT).
+
+q(Command, Timeout) ->
     RedisConnections = get_ets_redis_connections(),
-    case try_to_exec_command(RedisConnections, [], Command, 2) of
+    case try_to_exec_command(RedisConnections, [], Command, 2, Timeout) of
         {error, Error, _RedisConnections2, _InvalidConnections2} ->
             {error, Error};
         {ok, Value} ->

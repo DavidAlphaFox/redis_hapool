@@ -16,7 +16,7 @@
     stop/1]).
 
 %% APIs
--export([q/1]).
+-export([q/1, q/2]).
 
 %% APIs
 
@@ -24,6 +24,9 @@
     {ok, binary() | [binary()]} | {error, Reason::binary()}.
 q(Command) ->
     redis_hapool_server:q(Command).
+
+q(Command, Timeout) ->
+    redis_hapool_server:q(Command, Timeout).
 
 %%%===================================================================
 %%% Application callbacks
