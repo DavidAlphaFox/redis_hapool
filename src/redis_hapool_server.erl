@@ -113,6 +113,7 @@ try_to_exec_command(RedisConnections, InvalidConnections, Command, TryCount, Tim
             Ret = eredis_pool:q(Pool, Command, Timeout),
             case Ret of
                 {error, Error}  ->
+                    ?ERROR("eredis_pool:q error ~p", [Error]),
                     InvalidConnections2 = lists:append(InvalidConnections, [Connection]),
                     if
                     %% if failed, try the next connection and move the connection to invalid_connections
@@ -208,9 +209,8 @@ handle_info(?REDIS_RECOVERY_TIMER, State = #state{redis_connections = OldRedisCo
     case erlang:length(RecoveredRedisConnections) of
         0 ->
             % no redis connection recovered
-            ?DEBUG("tried to recover redis connections [~p], and none recovery", [OldInvalidConnections]);
+            ignore;
         _ ->
-            ?DEBUG("recovered redis connections [~p] from [~p]", [RecoveredRedisConnections, OldInvalidConnections]),
             redis_connection_changed(?MODULE, OldRedisConnections, ToRedisConnections, {replace, NewInvalidConnections})
     end,
     {noreply, State};
