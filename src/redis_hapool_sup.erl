@@ -31,8 +31,8 @@
 %%--------------------------------------------------------------------
 -spec(start_link(list()) ->
     {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link([RedisPool]) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, [RedisPool]).
+start_link([RedisPools]) ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, [RedisPools]).
 
 %%%===================================================================
 %%% Supervisor callbacks
@@ -55,7 +55,7 @@ start_link([RedisPool]) ->
     }} |
     ignore |
     {error, Reason :: term()}).
-init([RedisPool]) ->
+init([RedisPools]) ->
     RestartStrategy = one_for_one,
     MaxRestarts = 1000,
     MaxSecondsBetweenRestarts = 3600,
@@ -66,10 +66,17 @@ init([RedisPool]) ->
     Shutdown = 2000,
     Type = worker,
 
-    AChild = {'redis_hapool_server', {'redis_hapool_server', start_link, [RedisPool]},
-        Restart, Shutdown, Type, ['redis_hapool_server']},
+    PoolSpecs = lists:map(
+        fun({PoolName, Size, MaxOverflow, Addresses}) ->
+            Pool = lists:foldl(
+                fun({Host, Port}, Acc) ->
+                    [{list_to_atom(atom_to_list(PoolName) ++ "_" ++ integer_to_list(length(Acc))), Size, MaxOverflow, Host, Port} | Acc]
+                end, [], Addresses),
+            {PoolName, {'redis_hapool_server', start_link, [PoolName, lists:reverse(Pool)]},
+                Restart, Shutdown, Type, ['redis_hapool_server']}
+        end, RedisPools),
 
-    {ok, {SupFlags, [AChild]}}.
+    {ok, {SupFlags, PoolSpecs}}.
 
 %%%===================================================================
 %%% Internal functions
