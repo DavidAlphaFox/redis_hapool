@@ -3,7 +3,7 @@ Redis Client HA Pool in Erlang
 
 # Configration
 ```Erlang
-      {redis_pool,[
+      {redis_pools,[
           {pool1, 30, 20, [{"127.0.0.1", 19000}]},
           {pool2, 30, 20, [{"127.0.0.1", 19001}]},
           {pool3, 30, 20, [{"127.0.0.1", 19002}]}
