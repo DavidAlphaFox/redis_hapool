@@ -3,10 +3,10 @@ Redis Client HA Pool in Erlang
 
 # Configration
 ```Erlang
-      {redis_pool,[
-          {pool1, 30, 20, "127.0.0.1", 19000},
-          {pool2, 30, 20, "127.0.0.1", 19001},
-          {pool3, 30, 20, "127.0.0.1", 19002}
+      {redis_pools,[
+          {pool1, 30, 20, [{"127.0.0.1", 19000}]},
+          {pool2, 30, 20, [{"127.0.0.1", 19001}]},
+          {pool3, 30, 20, [{"127.0.0.1", 19002}]}
       ]}
 ```
 
@@ -21,4 +21,4 @@ erl -pa ebin -pa deps/*/ebin -s eredis_pool -s redis_hapool
 
 # APIs
 
-## redis_hapool:q(["GET", "test"])
+## redis_hapool:q(pool1, ["GET", "test"])

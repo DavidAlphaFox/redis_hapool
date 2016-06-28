@@ -16,17 +16,17 @@
     stop/1]).
 
 %% APIs
--export([q/1, q/2]).
+-export([q/2, q/3]).
 
 %% APIs
 
--spec q(Command::iolist()) ->
+-spec q(PoolName :: atom(), Command::iolist()) ->
     {ok, binary() | [binary()]} | {error, Reason::binary()}.
-q(Command) ->
-    redis_hapool_server:q(Command).
+q(PoolName, Command) ->
+    redis_hapool_server:q(PoolName, Command).
 
-q(Command, Timeout) ->
-    redis_hapool_server:q(Command, Timeout).
+q(PoolName, Command, Timeout) ->
+    redis_hapool_server:q(PoolName, Command, Timeout).
 
 %%%===================================================================
 %%% Application callbacks

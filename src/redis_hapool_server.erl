@@ -16,9 +16,9 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1
+-export([start_link/2
     , poolname/1
-    , redis_connection_changed/4, q/1, q/2]).
+    , redis_connection_changed/4, q/2, q/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -37,7 +37,8 @@
 -record(state, {
     redis_infos         ::redis_info_list(),
     redis_connections   ::redis_connection_list(),
-    invalid_connections ::redis_connection_list()
+    invalid_connections ::redis_connection_list(),
+    server_name
 }).
 
 %%%===================================================================
@@ -50,9 +51,9 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link(redis_info_list()) -> {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link(RedisPool) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [RedisPool], []).
+-spec(start_link(Name :: term(), redis_info_list()) -> {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
+start_link(Name, RedisPool) ->
+    gen_server:start_link({local, Name}, ?MODULE, [RedisPool], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -74,17 +75,23 @@ start_link(RedisPool) ->
     {stop, Reason :: term()} | ignore).
 init([RedisInfos]) ->
     lager:log(info, self(), "redis_pool init pools with info ~p", [RedisInfos]),
+    {registered_name, ServerName} = erlang:process_info(self(), registered_name),
 
     {RedisConnections, InvalidConnections} = update_redis_connection_by_info(RedisInfos, []),
 
-    create_ets_redis_connections(),
+    create_ets_redis_connections(ServerName),
 
-    update_ets_redis_connections(RedisConnections),
+    update_ets_redis_connections(ServerName, RedisConnections),
 
     schedule_redis_recovery(),
 
     lager:log(info, self(), "redis_pool started connection pools ~p", [RedisConnections]),
-    {ok, #state{redis_infos = RedisInfos, redis_connections = RedisConnections, invalid_connections = InvalidConnections}}.
+    {ok, #state{
+        redis_infos = RedisInfos,
+        redis_connections = RedisConnections,
+        invalid_connections = InvalidConnections,
+        server_name = ServerName
+    }}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -144,7 +151,7 @@ try_to_exec_command(RedisConnections, InvalidConnections, Command, TryCount, Tim
 handle_cast(
     {redis_connection_changed, FromRedisConnections, ToRedisConnections,InvalidRedisConnectionsInfo},
     State = #state{redis_infos = _OldRedisInfos, redis_connections = OldRedisConnections,
-        invalid_connections = OldInvalidConnections}) ->
+        invalid_connections = OldInvalidConnections, server_name = ServerName}) ->
     case FromRedisConnections == OldRedisConnections of
         true ->
             ToInvalidConnections = case InvalidRedisConnectionsInfo of
@@ -154,7 +161,7 @@ handle_cast(
 
             ToRedisInfos = [C#redis_connection.info || C <- ToRedisConnections],
             ?ERROR("changed connection from connections [~p], to connections [~p], infos [~p]", [FromRedisConnections, ToRedisConnections, ToRedisInfos]),
-            update_ets_redis_connections(ToRedisConnections),
+            update_ets_redis_connections(ServerName, ToRedisConnections),
             {noreply, State#state{redis_infos = ToRedisInfos, redis_connections = ToRedisConnections, invalid_connections = ToInvalidConnections}};
         _ ->
             %% changed from invalid connection info, just drop it
@@ -253,13 +260,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% APIs
 %%
 
--spec q(Command::iolist()) ->
+-spec q(Name :: atom(), Command :: iolist()) ->
     {ok, binary() | [binary()]} | {error, Reason::binary()}.
-q(Command) ->
-    q(Command, ?REDIS_QUERY_TIMEOUT).
+q(Name, Command) ->
+    q(Name, Command, ?REDIS_QUERY_TIMEOUT).
 
-q(Command, Timeout) ->
-    RedisConnections = get_ets_redis_connections(),
+q(Name, Command, Timeout) ->
+    RedisConnections = get_ets_redis_connections(Name),
     case try_to_exec_command(RedisConnections, [], Command, 2, Timeout) of
         {error, Error, _RedisConnections2, _InvalidConnections2} ->
             {error, Error};
@@ -339,22 +346,22 @@ new_connection_by_info(RedisInfo) ->
     #redis_connection{info = RedisInfo, status = read_write}.
 
 
--spec (create_ets_redis_connections() -> ok | {error, term()}).
-create_ets_redis_connections() ->
-    ets:new(?REDISES_CONNECTION_TABLE, [set, protected, named_table, {keypos,1}, {write_concurrency,false}, {read_concurrency,true}]).
+-spec (create_ets_redis_connections(ServerName :: atom()) -> ok | {error, term()}).
+create_ets_redis_connections(ServerName) ->
+    ets:new(ServerName, [set, protected, named_table, {keypos,1}, {write_concurrency,false}, {read_concurrency,true}]).
 
--spec (update_ets_redis_connections(redis_connection_list()) -> ok | {error, term()}).
-update_ets_redis_connections(OkConnections) ->
+-spec (update_ets_redis_connections(ServerName :: atom(), redis_connection_list()) -> ok | {error, term()}).
+update_ets_redis_connections(ServerName, OkConnections) ->
     try
         lager:log(debug, self(), "write connections[~p] to ets", [OkConnections]),
-        ets:insert(?REDISES_CONNECTION_TABLE, [{?REDISES_CONNECTION_LIST, OkConnections}]),
-        lager:log(debug, self(), "all ets connections[~p] ", [ets:tab2list(?REDISES_CONNECTION_TABLE)])
+        ets:insert(ServerName, [{?REDISES_CONNECTION_LIST, OkConnections}]),
+        lager:log(debug, self(), "all ets connections[~p] ", [ets:tab2list(ServerName)])
     catch E:T ->
         lager:log(error, self(), "update ets redis connection failed[~p:~p]", [E, T])
     end.
 
-get_ets_redis_connections() ->
-    [{?REDISES_CONNECTION_LIST, OkConnections}] = ets:lookup(?REDISES_CONNECTION_TABLE, ?REDISES_CONNECTION_LIST),
+get_ets_redis_connections(ServerName) ->
+    [{?REDISES_CONNECTION_LIST, OkConnections}] = ets:lookup(ServerName, ?REDISES_CONNECTION_LIST),
     OkConnections.
 
 -spec (schedule_redis_recovery() -> ok).

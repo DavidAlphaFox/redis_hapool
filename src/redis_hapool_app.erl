@@ -12,14 +12,13 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
-    RedisPool = case application:get_env(redis_pool) of
+    RedisPool = case application:get_env(redis_pools) of
                     undefined ->
-                        io:format("get env[redis_pool] failed."),
-                        [{defaultpool, 10, 10, "localhost", 3000}];
+                        [{defaultpool, 10, 10, [{"localhost", 6379}]}];
                     {ok, ConfigRedisPool} when is_list(ConfigRedisPool)->
                         ConfigRedisPool
                 end,
-    ?INFO("get redis_pool config [~p]", [RedisPool]),
+    ?INFO("get redis_pools config [~p]", [RedisPool]),
 
     redis_hapool_sup:start_link([RedisPool]).
 
