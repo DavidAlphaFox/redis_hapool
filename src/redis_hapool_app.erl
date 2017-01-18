@@ -2,10 +2,10 @@
 
 -behaviour(application).
 
--include_lib("elog/include/elog.hrl").
-
 %% Application callbacks
 -export([start/2, stop/1]).
+
+-compile([{parse_transform, lager_transform}]).
 
 %% ===================================================================
 %% Application callbacks
@@ -18,8 +18,7 @@ start(_StartType, _StartArgs) ->
                     {ok, ConfigRedisPool} when is_list(ConfigRedisPool)->
                         ConfigRedisPool
                 end,
-    ?INFO("get redis_pools config [~p]", [RedisPool]),
-
+    lager:info("get redis_pools config [~p]", [RedisPool]),
     redis_hapool_sup:start_link([RedisPool]).
 
 stop(_State) ->

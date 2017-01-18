@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
 %%% @author zhanghu
-%%% @copyright (C) 2016, <COMPANY>
+%%% @copyright (C) 2016, Yunba
 %%% @doc
 %%%
 %%% @end
@@ -12,8 +12,7 @@
 -behaviour(application).
 
 %% Application callbacks
--export([start/0, start/2,
-    stop/1]).
+-export([start/0, start/2, stop/1]).
 
 %% APIs
 -export([q/2, q/3]).

@@ -9,16 +9,14 @@
 -module(redis_hapool_server).
 -author("thi").
 
--include_lib("elog/include/elog.hrl").
--include_lib("stdlib/include/qlc.hrl").
 -include("redis_hapool.hrl").
 
 -behaviour(gen_server).
 
+-compile([{parse_transform, lager_transform}]).
+
 %% API
--export([start_link/2
-    , poolname/1
-    , redis_connection_changed/4, q/2, q/3]).
+-export([start_link/2, poolname/1, redis_connection_changed/4, q/2, q/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -29,10 +27,9 @@
     code_change/3]).
 
 -define(SERVER, ?MODULE).
-
 -define(REDIS_RECOVERY_TIME_INTERVAL, 2000).
--define(REDIS_RECOVERY_TIMER, redis_recovery_timer).
 -define(REDIS_QUERY_TIMEOUT, 5000).
+-define(REDIS_RECOVERY_TIMER, redis_recovery_timer).
 
 -record(state, {
     redis_infos         ::redis_info_list(),
@@ -74,7 +71,7 @@ start_link(Name, RedisPool) ->
     {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore).
 init([RedisInfos]) ->
-    lager:log(info, self(), "redis_pool init pools with info ~p", [RedisInfos]),
+    lager:info("redis_pool init pools with info ~p", [RedisInfos]),
     {registered_name, ServerName} = erlang:process_info(self(), registered_name),
 
     {RedisConnections, InvalidConnections} = update_redis_connection_by_info(RedisInfos, []),
@@ -85,7 +82,8 @@ init([RedisInfos]) ->
 
     schedule_redis_recovery(),
 
-    lager:log(info, self(), "redis_pool started connection pools ~p", [RedisConnections]),
+    lager:info("redis_pool started connection pools ~p", [RedisConnections]),
+
     {ok, #state{
         redis_infos = RedisInfos,
         redis_connections = RedisConnections,
@@ -120,7 +118,7 @@ try_to_exec_command(RedisConnections, InvalidConnections, Command, TryCount, Tim
             Ret = eredis_pool:q(Pool, Command, Timeout),
             case Ret of
                 {error, Error}  ->
-                    ?ERROR("eredis_pool:q error ~p", [Error]),
+                    lager:error("eredis_pool:q error ~p", [Error]),
                     InvalidConnections2 = lists:append(InvalidConnections, [Connection]),
                     if
                     %% if failed, try the next connection and move the connection to invalid_connections
@@ -160,12 +158,12 @@ handle_cast(
                                    end,
 
             ToRedisInfos = [C#redis_connection.info || C <- ToRedisConnections],
-            ?ERROR("changed connection from connections [~p], to connections [~p], infos [~p]", [FromRedisConnections, ToRedisConnections, ToRedisInfos]),
+            lager:error("changed connection from connections [~p], to connections [~p], infos [~p]", [FromRedisConnections, ToRedisConnections, ToRedisInfos]),
             update_ets_redis_connections(ServerName, ToRedisConnections),
             {noreply, State#state{redis_infos = ToRedisInfos, redis_connections = ToRedisConnections, invalid_connections = ToInvalidConnections}};
         _ ->
             %% changed from invalid connection info, just drop it
-            ?ERROR("droped changed connection from uncompatible connections [~p], old connections [~p], just drop it", [FromRedisConnections, OldRedisConnections]),
+            lager:error("droped changed connection from uncompatible connections [~p], old connections [~p], just drop it", [FromRedisConnections, OldRedisConnections]),
             {noreply, State}
     end;
 
@@ -222,8 +220,8 @@ handle_info(?REDIS_RECOVERY_TIMER, State = #state{redis_connections = OldRedisCo
     end,
     {noreply, State};
 
-handle_info(_Info, State) ->
-    ?ERROR("handle unknown info [~p]", [_Info]),
+handle_info(Info, State) ->
+    lager:error("handle unknown info [~p]", [Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -259,7 +257,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%
 %% APIs
 %%
-
 -spec q(Name :: atom(), Command :: iolist()) ->
     {ok, binary() | [binary()]} | {error, Reason::binary()}.
 q(Name, Command) ->
@@ -314,20 +311,10 @@ get_connection_by_info(RedisInfo, RedisConnections) ->
         false -> new_connection_by_info(RedisInfo)
     end.
 
-%-spec (remove_connection(#redis_connection{}) -> ok).
-%remove_connection(RedisConnection = #redis_connection{info = {Poolname, _Size, _Overflow, _Host, _port}}) ->
-%    eredis_pool:delete_pool(Poolname),
-%    RedisConnection.
-
 -spec (update_redis_connection_by_info(list(), list(#redis_connection{})) -> {redis_connection_list(), redis_connection_list()}).
 update_redis_connection_by_info(RedisInfos, RedisConnections) ->
     NewConnections = [get_connection_by_info(I, RedisConnections) || I <- RedisInfos],
 
-    %% handle useless connections
-    %_NewInvalidConnections = [
-    %    remove_connection(C)
-    %    || C <- RedisConnections, false = find_info_by_connection(C, RedisInfos)
-    %],
     NewInvalidConnections = lists:filter(
     fun (C) ->
         case find_info_by_connection(C, RedisInfos) of
@@ -340,9 +327,9 @@ update_redis_connection_by_info(RedisInfos, RedisConnections) ->
 -spec (new_connection_by_info(redis_info()) -> #redis_connection{}).
 new_connection_by_info(RedisInfo) ->
     {PoolName, Size, MaxOverflow, Host, Port} = RedisInfo,
-    lager:log(debug, self(), "create pool with info [~p] ", [RedisInfo]),
+    lager:debug("create pool with info [~p] ", [RedisInfo]),
     Result = eredis_pool:create_pool(PoolName, {Size, MaxOverflow}, Host, Port),
-    lager:log(info, self(), "create pool result [~p]", [Result]),
+    lager:info("create pool result [~p]", [Result]),
     #redis_connection{info = RedisInfo, status = read_write}.
 
 
@@ -353,11 +340,11 @@ create_ets_redis_connections(ServerName) ->
 -spec (update_ets_redis_connections(ServerName :: atom(), redis_connection_list()) -> ok | {error, term()}).
 update_ets_redis_connections(ServerName, OkConnections) ->
     try
-        lager:log(debug, self(), "write connections[~p] to ets", [OkConnections]),
+        lager:debug( "write connections[~p] to ets", [OkConnections]),
         ets:insert(ServerName, [{?REDISES_CONNECTION_LIST, OkConnections}]),
-        lager:log(debug, self(), "all ets connections[~p] ", [ets:tab2list(ServerName)])
+        lager:debug("all ets connections[~p] ", [ets:tab2list(ServerName)])
     catch E:T ->
-        lager:log(error, self(), "update ets redis connection failed[~p:~p]", [E, T])
+        lager:error("update ets redis connection failed[~p:~p]", [E, T])
     end.
 
 get_ets_redis_connections(ServerName) ->
