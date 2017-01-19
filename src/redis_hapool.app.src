@@ -5,7 +5,11 @@
   {registered, []},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+                  lager,
+                  poolboy,
+                  eredis,
+                  eredis_pool
                  ]},
   {mod, { redis_hapool_app, []}},
   {env, []}
