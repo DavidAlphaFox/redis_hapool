@@ -6,3 +6,5 @@ log
 erl_crash.dump
 *.beam
 *.iml
+rel/redis_hapool
+rel/files/app.config

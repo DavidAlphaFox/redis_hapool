@@ -1,0 +1,39 @@
+[
+    %% SASL config
+    {sasl, [
+            {sasl_error_logger, {file, "log/sasl-error.log"}},
+            {errlog_type, error},
+            {error_logger_mf_dir, "log/sasl"},      % Log directory
+            {error_logger_mf_maxbytes, 10485760},   % 10 MB max file size
+            {error_logger_mf_maxfiles, 5}           % 5 files max
+    ]},
+    {lager, [
+        {error_logger_hwm, 5},
+        {lager_console_backend, info},
+        {error_logger_redirect, true},
+        {crash_log, "log/estat_crash.log"},
+        {handlers, [
+            {lager_file_backend, [
+                {file, "log/redis_hapool_error.log"},
+                {level, error},
+                {size, 1048576000},
+                {date, "$D0"},
+                {count, 10}
+            ]},
+            {lager_file_backend, [
+                {file, "log/redis_hapool_info.log"},
+                {level, debug},
+                {size, 1048576000},
+                {date, "$D0"},
+                {count, 10}
+            ]}
+        ]}
+    ]},
+    {redis_hapool, [
+        {redis_pools,[
+            {test, 3, 2, [
+                {"localhost", 6379}
+            ]}
+        ]}
+    ]}
+].
